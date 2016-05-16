@@ -1,11 +1,10 @@
 class RGui < Formula
   desc "R.app Cocoa GUI for the R Programming Language"
   homepage "http://cran.r-project.org/bin/macosx/"
-  url "http://cran.r-project.org/bin/macosx/Mac-GUI-1.67.tar.gz"
-  sha256 "8a565c0268b0194c69ba1c19b4919e802fc63c420a0eb80fa8943e10f053e898"
+  url "http://cran.r-project.org/bin/macosx/Mac-GUI-1.68.tar.gz"
+  sha256 "7dff17659a69e3c492fdfc3fb765e3c9537157d50b6886236bee7ad873eb416d"
 
   head "https://svn.r-project.org/R-packages/trunk/Mac-GUI"
-  revision 1
 
   bottle do
     cellar :any
@@ -20,16 +19,47 @@ class RGui < Formula
 
   depends_on "r"
 
+  # patch to allow zero as return value for R_ReplDLLdo1() in main REPL loop
+  patch :DATA
+
   def install
     # ugly hack to get updateSVN script in build to not fail
     cp_r cached_download/".svn", buildpath if build.head?
 
-    r_opt_prefix = Formula["r"].opt_prefix
+    # relax HTTP security to allow HTTP connection to local help server
+    plb "Info.plist",
+        "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool",
+        "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads true"
 
-    xcodebuild "-target", "R", "-configuration", "Release", "SYMROOT=build",
-               "HEADER_SEARCH_PATHS=#{r_opt_prefix}/R.framework/Headers",
-               "OTHER_LDFLAGS=-F#{r_opt_prefix}"
+    r_prefix = Formula["r"].opt_prefix
+    build = "Release"
 
-    prefix.install "build/Release/R.app"
+    xcodebuild "-target", "R", "-configuration", build, "SYMROOT=build",
+               "HEADER_SEARCH_PATHS=#{r_prefix}/R.framework/Headers",
+               "OTHER_LDFLAGS=-F#{r_prefix}"
+
+    prefix.install "build/#{build}/R.app"
+  end
+
+  # apply PlistBuddy commands
+  def plb(filename, *actions)
+    actions.each do |action|
+      system "/usr/libexec/PlistBuddy", "-c", action, filename
+    end
   end
 end
+
+__END__
+diff --git a/REngine/Rinit.m b/REngine/Rinit.m
+index b6e171b..a1b99af 100644
+--- a/REngine/Rinit.m
++++ b/REngine/Rinit.m
+@@ -161,7 +161,7 @@ void run_REngineRmainloop(int delayed)
+     }
+ 
+     main_loop_result = 1;
+-    while (main_loop_result > 0) {
++    while (main_loop_result >= 0) {
+ 	@try {
+ #ifdef USE_POOLS
+ 	    if (main_loop_pool) {
